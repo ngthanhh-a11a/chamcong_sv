@@ -1,15 +1,16 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <HTTPClient.h> // Thêm thư viện gọi HTTP
+#include <HTTPClient.h> 
+#include <WiFiClientSecure.h> // SỬA LỖI: Bắt buộc phải có để chạy HTTPS đám mây
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-// Thay IP mạng Wi-Fi bằng IP loopback của Wokwi
-const char* serverName = "https://chamcong-sv-nttu.onrender.com";
+// SỬA LỖI: Thêm chính xác phân hệ API endpoint ở cuối đường dẫn
+const char* serverName = "https://chamcong-sv-nttu.onrender.com/api/attendance";
 
-// Định nghĩa chân kết nối (Giữ nguyên cấu hình cũ)
+// Định nghĩa chân kết nối (Giữ nguyên cấu hình phần cứng cũ)
 #define SS_PIN 5
 #define RST_PIN 4
 #define LED_GREEN 12
@@ -48,8 +49,8 @@ void setup() {
     Serial.print(".");
   }
   
-  // Bỏ qua toàn bộ phần đồng bộ NTP và SSL vì chúng ta gọi HTTP local
-  Serial.println("\n[Thành công] Đã kết nối WiFi cục bộ.");
+  // Đã chuyển đổi sang giao thức bảo mật đám mây thành công
+  Serial.println("\n[Thành công] Đã kết nối WiFi Internet.");
   displayReady();
 }
 
@@ -72,10 +73,14 @@ void loop() {
   lcd.print("Dang gui API...");
   Serial.println("\nQuét được thẻ UID: " + uidStr);
 
-  // Gửi HTTP POST lên Server Node.js
+  // Gửi HTTP POST lên Server Render Cloud
   if (WiFi.status() == WL_CONNECTED) {
+    // SỬA LỖI: Tạo client bảo mật và cấu hình bỏ qua kiểm tra chứng chỉ SSL của Render
+    WiFiClientSecure client;
+    client.setInsecure(); 
+
     HTTPClient http;
-    http.begin(serverName); // Khởi tạo kết nối tới Node.js API
+    http.begin(client, serverName); // Khởi tạo kết nối bảo mật HTTPS
     
     // Khai báo Header là JSON
     http.addHeader("Content-Type", "application/json");
@@ -83,9 +88,10 @@ void loop() {
     // Tạo chuỗi JSON thủ công cực nhẹ: {"uid":"E3F2A1B2"}
     String httpRequestData = "{\"uid\":\"" + uidStr + "\"}";
     
-    // Gửi request
+    // Gửi request POST
     int httpResponseCode = http.POST(httpRequestData);
     
+    // SQA Logic: Chấp nhận mã 200 (OK) hoặc 201 (Created) từ Node.js Backend
     if (httpResponseCode == 200 || httpResponseCode == 201) {
       Serial.print("Đẩy dữ liệu thành công. HTTP Code: ");
       Serial.println(httpResponseCode);
@@ -96,7 +102,7 @@ void loop() {
       errorFeedback();
     }
     
-    http.end(); // Giải phóng tài nguyên
+    http.end(); // Giải phóng tài nguyên mạng
   } else {
     Serial.println("Lỗi mất kết nối WiFi");
     errorFeedback();
@@ -121,13 +127,11 @@ void successFeedback() {
   lcd.setCursor(0, 1);
   lcd.print("Thanh cong!     ");
   
-  // Bật LED xanh và còi
+  // Bật LED xanh và còi bíp ngắn
   digitalWrite(LED_GREEN, HIGH);
   digitalWrite(BUZZER, HIGH); 
+  delay(200); 
   
-  delay(200); // Kêu bíp ngắn 0.2s
-  
-  // Tắt LED và còi
   digitalWrite(BUZZER, LOW);
   digitalWrite(LED_GREEN, LOW);
 }
@@ -136,13 +140,11 @@ void errorFeedback() {
   lcd.setCursor(0, 1);
   lcd.print("Loi ket noi!    ");
   
-  // Bật LED đỏ và còi
+  // Bật LED đỏ và còi kêu dài cảnh báo
   digitalWrite(LED_RED, HIGH);
   digitalWrite(BUZZER, HIGH); 
+  delay(1000); 
   
-  delay(1000); // Kêu bíp dài 1s
-  
-  // Tắt LED và còi
   digitalWrite(BUZZER, LOW);
   digitalWrite(LED_RED, LOW);
 }
