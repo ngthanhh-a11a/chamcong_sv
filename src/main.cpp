@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 // Thay IP mạng Wi-Fi bằng IP loopback của Wokwi
-const char* serverName = "http://192.168.1.87:3000/api/attendance";
+const char* serverName = "https://chamcong-sv-nttu.onrender.com";
 
 // Định nghĩa chân kết nối (Giữ nguyên cấu hình cũ)
 #define SS_PIN 5
