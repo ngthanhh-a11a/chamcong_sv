@@ -127,12 +127,14 @@ void successFeedback() {
   lcd.setCursor(0, 1);
   lcd.print("Thanh cong!     ");
   
-  // Bật LED xanh và còi bíp ngắn
+  // Bật LED xanh và phát âm thanh tần số 1000Hz
   digitalWrite(LED_GREEN, HIGH);
-  digitalWrite(BUZZER, HIGH); 
-  delay(200); 
+  tone(BUZZER, 1000); 
   
-  digitalWrite(BUZZER, LOW);
+  delay(500); // Kéo dài thời gian sáng đèn để dễ quan sát
+  
+  // Tắt LED và ngắt âm thanh
+  noTone(BUZZER);
   digitalWrite(LED_GREEN, LOW);
 }
 
