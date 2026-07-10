@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NTTU Smart Attendance | Admin Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        /* Hiệu ứng Toast Notification */
+        .toast-enter { animation: slideInRight 0.4s cubic-bezier(0.25, 0.8, 0.25, 1) forwards; }
+        .toast-leave { animation: fadeOut 0.3s ease-in forwards; }
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut { to { opacity: 0; } }
+    </style>
+</head>
+<body class="text-slate-800 flex h-screen overflow-hidden">
+
+    <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col justify-between shrink-0 shadow-2xl z-20 hidden md:flex">
+        <div>
+            <div class="h-16 flex items-center px-6 border-b border-slate-800">
+                <div class="flex items-center gap-3">
+                    <div class="bg-indigo-600 p-1.5 rounded-lg text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    </div>
+                    <span class="text-white font-bold text-lg tracking-wider">NTTU RFID</span>
+                </div>
+            </div>
+            <nav class="p-4 space-y-2 mt-4" id="nav-menu">
+                <button onclick="app.switchTab('dashboard')" id="btn-dashboard" class="w-full flex items-center gap-3 bg-indigo-500/10 text-indigo-300 px-4 py-3 rounded-xl font-semibold transition-all duration-300 border border-indigo-500/30">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4zM14 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2v-4z"></path></svg>
+                    <span>Bảng điều khiển</span>
+                </button>
+                <button onclick="app.switchTab('students')" id="btn-students" class="w-full flex items-center gap-3 text-slate-400 hover:bg-slate-800/50 hover:text-white px-4 py-3 rounded-xl font-medium transition-all">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <span>Quản lý Thẻ & SV</span>
+                </button>
+                <button onclick="app.switchTab('settings')" id="btn-settings" class="w-full flex items-center gap-3 text-slate-400 hover:bg-slate-700/50 hover:text-white px-4 py-3 rounded-xl font-semibold transition-all duration-300">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <span>Cài đặt</span>
+                </button>
+            </nav>
+        </div>
+        <div class="p-4 bg-slate-800/50 m-4 rounded-xl border border-slate-700/50 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/30">T</div>
+            <div class="overflow-hidden">
+                <h4 class="text-sm font-semibold text-white truncate">Đức Thành</h4>
+                <p class="text-xs text-slate-400 truncate">System Admin</p>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col h-screen relative">
+        <header class="h-16 bg-white/70 backdrop-blur-lg border-b border-slate-200 flex items-center justify-between px-8 z-10 shrink-0">
+            <div class="flex items-center gap-3">
+                <div id="api-status" class="flex items-center gap-2 bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full text-xs font-semibold border border-slate-200 transition-colors">
+                    <span class="w-2 h-2 rounded-full bg-slate-400"></span> Đang kết nối...
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="text-right">
+                    <p id="live-clock" class="text-sm font-bold text-slate-800">00:00:00</p>
+                    <p id="live-date" class="text-xs text-slate-500 font-medium">--/--/----</p>
+                </div>
+            </div>
+        </header>
+
+        <div class="flex-1 overflow-y-auto p-8 relative">
+            
+            <div id="toast-container" class="fixed top-20 right-8 z-50 flex flex-col gap-2"></div>
+
+            <div id="tab-dashboard" class="space-y-6 max-w-7xl mx-auto block">
+                
+                <div class="flex flex-col sm:flex-row justify-between sm:items-end gap-2">
+                    <div>
+                        <h1 class="text-2xl font-bold text-slate-900">Tổng quan hệ thống</h1>
+                        <p class="text-sm text-slate-500 mt-1">Phân tích dữ liệu điểm danh theo thời gian thực</p>
+                    </div>
+                    <button onclick="window.location.href = `${API_URL}/report/excel`" class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-xl transition-all duration-300 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        <span>Xuất Excel</span>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center gap-5">
+                        <div class="w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg></div>
+                        <div>
+                            <p class="text-sm font-semibold text-slate-500 mb-1">Tổng lượt quét</p>
+                            <h3 id="stat-total" class="text-3xl font-bold text-slate-800">0</h3>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center gap-5">
+                        <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                        <div>
+                            <p class="text-sm font-semibold text-slate-500 mb-1">Đúng giờ</p>
+                            <h3 id="stat-ontime" class="text-3xl font-bold text-emerald-600">0</h3>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center gap-5">
+                        <div class="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                        <div>
+                            <p class="text-sm font-semibold text-slate-500 mb-1">Đi muộn</p>
+                            <h3 id="stat-late" class="text-3xl font-bold text-amber-500">0</h3>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center gap-5">
+                        <div class="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg></div>
+                        <div>
+                            <p class="text-sm font-semibold text-slate-500 mb-1">Thẻ lạ</p>
+                            <h3 id="stat-unknown" class="text-3xl font-bold text-rose-500">0</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm lg:col-span-2">
+                        <h3 class="font-bold text-slate-800 mb-4">Mật độ quẹt thẻ trong ngày</h3>
+                        <div class="h-64 w-full">
+                            <canvas id="attendanceChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm flex flex-col h-[330px]">
+                        <div class="p-5 border-b border-slate-200/80 flex justify-between items-center bg-slate-50/50 rounded-t-2xl">
+                            <h3 class="font-bold text-slate-800">Log mới nhất</h3>
+                            <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-2">
+                            <ul id="mini-log-list" class="space-y-1">
+                                </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-students" class="space-y-6 max-w-7xl mx-auto hidden">
+                <div>
+                    <h1 class="text-2xl font-bold text-slate-900">Quản lý Định danh</h1>
+                    <p class="text-sm text-slate-500 mt-1">Đăng ký thông tin thẻ RFID và danh sách sinh viên nội bộ.</p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm lg:col-span-1 h-fit sticky top-8">
+                        <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        </div>
+                        <h3 class="font-bold text-slate-800 text-lg mb-4">Đăng ký thẻ mới</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-slate-600 mb-1.5">Mã Thẻ (UID)</label>
+                                <input type="text" id="reg-uid" placeholder="Quẹt thẻ hoặc nhập..." class="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-300 font-mono uppercase">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-slate-600 mb-1.5">Họ và Tên</label>
+                                <input type="text" id="reg-name" placeholder="Nguyễn Văn A" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-300">
+                            </div>
+                            <button onclick="app.registerStudent()" class="w-full bg-slate-900 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 mt-2 shadow-lg shadow-indigo-500/10 hover:shadow-indigo-500/20">
+                                Ghi nhận hệ thống
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm lg:col-span-2 overflow-hidden">
+                        <div class="p-6 border-b border-slate-200/80 flex justify-between items-center bg-slate-50/50">
+                            <h3 class="font-bold text-slate-800">Danh sách Thẻ hợp lệ</h3>
+                            <span id="student-count" class="bg-indigo-100 text-indigo-700 py-1 px-3 rounded-full text-xs font-bold">0 người</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-slate-50/70 border-b border-slate-200/80 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                    <tr>
+                                        <th class="py-4 px-6">Mã UID</th>
+                                        <th class="py-4 px-6">Định danh Sinh viên</th>
+                                        <th class="py-4 px-6">Ngày cấp</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="student-list-body" class="text-sm divide-y divide-slate-100">
+                                    </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-settings" class="space-y-6 max-w-4xl mx-auto hidden">
+                <div>
+                    <h1 class="text-2xl font-bold text-slate-900">Cài đặt Hệ thống</h1>
+                    <p class="text-sm text-slate-500 mt-1">Thiết lập các tham số vận hành cho hệ thống điểm danh.</p>
+                </div>
+
+                <div class="bg-white p-8 rounded-2xl border border-slate-200/80 shadow-sm">
+                    <h3 class="font-bold text-slate-800 text-lg mb-1">Cấu hình Ca làm việc</h3>
+                    <p class="text-sm text-slate-500 mb-6">Quy định về thời gian điểm danh hợp lệ.</p>
+                    
+                    <div class="space-y-5">
+                        <div>
+                            <label for="set-shiftName" class="block text-sm font-semibold text-slate-600 mb-1.5">Tên ca</label>
+                            <input type="text" id="set-shiftName" placeholder="VD: Ca Sáng, Giờ Hành chính..." class="w-full max-w-md px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-300">
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                            <div>
+                                <label for="set-startTime" class="block text-sm font-semibold text-slate-600 mb-1.5">Giờ vào</label>
+                                <input type="time" id="set-startTime" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-300">
+                            </div>
+                            <div>
+                                <label for="set-endTime" class="block text-sm font-semibold text-slate-600 mb-1.5">Giờ tan</label>
+                                <input type="time" id="set-endTime" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-300">
+                            </div>
+                            <div>
+                                <label for="set-lateThreshold" class="block text-sm font-semibold text-slate-600 mb-1.5">Phút đi trễ cho phép</label>
+                                <input type="number" id="set-lateThreshold" placeholder="VD: 15" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-300">
+                            </div>
+                        </div>
+                        <div class="pt-4">
+                            <button onclick="app.saveShiftSettings()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-6 rounded-xl transition-all duration-300 shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30">
+                                Lưu thay đổi
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        // Thay IP cũ bằng IP mới
+        const API_URL = "https://chamcong-sv-nttu.onrender.com";
+
+        const app = {
+            chart: null,
+            lastLogCount: 0,
+
+            init() {
+                this.initClock();
+                this.initChart();
+                this.fetchLogs();
+                setInterval(() => this.fetchLogs(), 2000); // Polling mỗi 2s
+            },
+
+            // Quản lý Tab
+            switchTab(tab) {
+                document.getElementById('tab-dashboard').style.display = tab === 'dashboard' ? 'block' : 'none';
+                document.getElementById('tab-students').style.display = tab === 'students' ? 'block' : 'none';
+                document.getElementById('tab-settings').style.display = tab === 'settings' ? 'block' : 'none';
+                
+                const activeClass = "w-full flex items-center gap-3 bg-indigo-500/10 text-indigo-300 px-4 py-3 rounded-xl font-semibold transition-all duration-300 border border-indigo-500/30";
+                const inactiveClass = "w-full flex items-center gap-3 text-slate-400 hover:bg-slate-700/50 hover:text-white px-4 py-3 rounded-xl font-semibold transition-all duration-300";
+                
+                document.getElementById('btn-dashboard').className = tab === 'dashboard' ? activeClass : inactiveClass;
+                document.getElementById('btn-students').className = tab === 'students' ? activeClass : inactiveClass;
+                document.getElementById('btn-settings').className = tab === 'settings' ? activeClass : inactiveClass;
+
+                if(tab === 'students') this.fetchStudents();
+                if(tab === 'settings') this.fetchShiftSettings();
+            },
+
+            // Hệ thống hiển thị thông báo góc
+            showToast(message, type = 'success') {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                const colors = type === 'success' ? 'bg-emerald-500 border-emerald-600' : 'bg-rose-500 border-rose-600';
+                const icon = type === 'success' ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+                
+                toast.className = `toast-enter flex items-center gap-3 px-5 py-3 rounded-xl text-white font-semibold shadow-lg border-b-4 ${colors}`;
+                toast.innerHTML = `${icon}<span>${message}</span>`;
+                
+                container.appendChild(toast);
+                setTimeout(() => {
+                    toast.classList.replace('toast-enter', 'toast-leave');
+                    setTimeout(() => toast.remove(), 300);
+                }, 3000);
+            },
+
+            // Cập nhật huy hiệu trạng thái API
+            updateConnectionStatus(isOnline) {
+                const badge = document.getElementById('api-status');
+                if (isOnline) {
+                    badge.className = "flex items-center gap-2 bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full text-xs font-bold border border-emerald-200 transition-colors";
+                    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Đã kết nối DB`;
+                } else {
+                    badge.className = "flex items-center gap-2 bg-rose-100 text-rose-700 px-3 py-1.5 rounded-full text-xs font-bold border border-rose-200 transition-colors";
+                    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span> Mất kết nối`;
+                }
+            },
+
+            // Vẽ biểu đồ
+            initChart() {
+                const ctx = document.getElementById('attendanceChart').getContext('2d');
+                this.chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: Array.from({length: 24}, (_, i) => `${i}h`),
+                        datasets: [{
+                            label: 'Lượt quét',
+                            data: new Array(24).fill(0),
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.05)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4,
+                            pointBackgroundColor: '#6366f1',
+                            pointBorderColor: '#fff',
+                            pointHoverBackgroundColor: '#fff',
+                            pointHoverBorderColor: '#6366f1',
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                        }]
+                    },
+                    options: { 
+                        responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true, grid: { color: '#e2e8f0' } }, x: { grid: { display: false } } }
+                    }
+                });
+            },
+
+            // Lấy log từ API
+            // Lấy log từ API (Bản vá SQA: Cập nhật UI chuẩn xác)
+            async fetchLogs() {
+                try {
+                    const res = await fetch(`${API_URL}/logs`);
+                    if(!res.ok) throw new Error();
+                    const data = await res.json();
+                    
+                    this.updateConnectionStatus(true);
+
+                    // Chuyển dữ liệu thành chuỗi để so sánh. Nếu có bất kỳ sự thay đổi nhỏ nào (Tên, Trạng thái), bắt buộc vẽ lại UI
+                    const currentDataString = JSON.stringify(data);
+                    if (currentDataString !== this.lastDataString) {
+                        this.lastDataString = currentDataString;
+                        this.renderDashboard(data);
+                    }
+                } catch (e) {
+                    this.updateConnectionStatus(false);
+                }
+            },  
+
+            // Lấy danh sách sinh viên
+            async fetchStudents() {
+                try {
+                    const res = await fetch(`${API_URL}/students`);
+                    const data = await res.json();
+                    
+                    document.getElementById('student-count').innerText = `${data.length} người`;
+                    const tbody = document.getElementById('student-list-body');
+                    tbody.innerHTML = data.map(st => `
+                        <tr class="hover:bg-slate-50 transition-colors duration-200">
+                            <td class="py-4 px-6 font-mono text-xs font-semibold text-slate-500">${st.uid}</td>
+                            <td class="py-4 px-6 font-bold text-slate-800">${st.fullName}</td>
+                            <td class="py-4 px-6 text-sm text-slate-500 flex items-center justify-between">
+                                <span>${new Date(st.registeredAt).toLocaleDateString('vi-VN')}</span>
+                                <button onclick="app.editStudent('${st.uid}', '${st.fullName}')" class="text-indigo-600 hover:text-indigo-800 font-bold px-3 py-1 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors duration-200 text-xs border border-indigo-200">
+                                    Sửa Tên
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } catch (e) {
+                    console.log("Chưa có API lấy danh sách SV");
+                }
+            },
+
+            // Đẩy SV mới lên API
+            async registerStudent() {
+                const uid = document.getElementById('reg-uid').value.trim();
+                const name = document.getElementById('reg-name').value.trim();
+                if (!uid || !name) return this.showToast("Vui lòng điền đủ thông tin!", "error");
+
+                try {
+                    const res = await fetch(`${API_URL}/students`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ uid, fullName: name })
+                    });
+                    
+                    if (res.ok) {
+                        this.showToast("Đăng ký thẻ thành công!");
+                        document.getElementById('reg-uid').value = '';
+                        document.getElementById('reg-name').value = '';
+                        this.fetchStudents(); // Cập nhật lại bảng
+                    } else {
+                        const err = await res.json();
+                        this.showToast(err.error, "error");
+                    }
+                } catch (e) {
+                    this.showToast("Lỗi máy chủ!", "error");
+                }
+            },
+
+            // Sửa tên sinh viên
+            async editStudent(uid, currentName) {
+                // Hiển thị hộp thoại nhập tên mới nhanh gọn
+                const newName = prompt(`Sửa tên định danh cho mã thẻ ${uid}:`, currentName);
+                
+                // Kiểm tra nếu người dùng bấm Cancel hoặc để trống
+                if (newName === null || newName.trim() === "" || newName === currentName) return;
+
+                try {
+                    const res = await fetch(`${API_URL}/students/${uid}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fullName: newName.trim() })
+                    });
+                    
+                    if (res.ok) {
+                        this.showToast("Cập nhật tên thành công!");
+                        this.fetchStudents(); // Tải lại bảng sinh viên
+                        this.fetchLogs(); // Tải lại bảng Dashboard để đổi tên ngay lập tức
+                    } else {
+                        const err = await res.json();
+                        this.showToast(err.error, "error");
+                    }
+                } catch (e) {
+                    this.showToast("Lỗi máy chủ khi cập nhật!", "error");
+                }
+            },
+
+            // Lấy cấu hình ca làm việc
+            async fetchShiftSettings() {
+                try {
+                    const res = await fetch(`${API_URL}/settings/shift`);
+                    if (!res.ok) throw new Error('Cannot fetch settings');
+                    const settings = await res.json();
+                    
+                    document.getElementById('set-shiftName').value = settings.shiftName || '';
+                    document.getElementById('set-startTime').value = settings.startTime || '00:00';
+                    document.getElementById('set-endTime').value = settings.endTime || '00:00';
+                    document.getElementById('set-lateThreshold').value = settings.lateThreshold || 0;
+
+                } catch (e) {
+                    this.showToast("Không thể tải cấu hình ca!", "error");
+                }
+            },
+
+            // Lưu cấu hình ca làm việc
+            async saveShiftSettings() {
+                const settings = {
+                    shiftName: document.getElementById('set-shiftName').value,
+                    startTime: document.getElementById('set-startTime').value,
+                    endTime: document.getElementById('set-endTime').value,
+                    lateThreshold: document.getElementById('set-lateThreshold').value,
+                };
+
+                try {
+                    const res = await fetch(`${API_URL}/settings/shift`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(settings)
+                    });
+                    if (!res.ok) throw new Error('Failed to save');
+                    this.showToast("Cập nhật cấu hình ca thành công!");
+                } catch (e) {
+                    this.showToast("Lỗi khi lưu cấu hình!", "error");
+                }
+            },
+
+            renderDashboard(logs) {
+                let onTime = 0, late = 0, unknown = 0;
+                const hourlyData = new Array(24).fill(0);
+                const miniLogHTML = [];
+
+                logs.forEach((log, index) => {
+                    if (log.status === "Đúng giờ") onTime++;
+                    else if (log.status === "Đi muộn") late++;
+                    else unknown++;
+
+                    const d = new Date(log.timestamp);
+                    hourlyData[d.getHours()]++;
+
+                    // Render 10 dòng log mới nhất ra màn hình
+                    if(index < 10) {
+                        const timeStr = d.toLocaleTimeString('vi-VN');
+                        const isUnknown = log.status === "Chưa đăng ký";
+                        const nameColor = isUnknown ? 'text-rose-500' : 'text-slate-800';
+                        const badgeColor = log.status === "Đúng giờ" ? 'bg-emerald-100 text-emerald-700' : (isUnknown ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700');
+
+                        miniLogHTML.push(`
+                            <li class="p-3 hover:bg-slate-50 rounded-xl flex items-center justify-between transition-colors duration-200">
+                                <div>
+                                    <p class="font-bold text-sm ${nameColor}">${log.fullName || 'Thẻ lạ'}</p>
+                                    <p class="text-xs text-slate-400 font-mono mt-0.5">UID: ${log.uid}</p>
+                                </div>
+                                <div class="text-right">
+                                    <span class="px-2 py-1 rounded text-[10px] font-bold uppercase ${badgeColor}">${log.status}</span>
+                                    <p class="text-[11px] text-slate-400 mt-1">${timeStr}</p>
+                                </div>
+                            </li>
+                        `);
+                    }
+                });
+
+                document.getElementById('stat-total').innerText = logs.length;
+                document.getElementById('stat-ontime').innerText = onTime;
+                document.getElementById('stat-late').innerText = late;
+                document.getElementById('stat-unknown').innerText = unknown;
+                
+                document.getElementById('mini-log-list').innerHTML = miniLogHTML.join('');
+
+                // Update Chart
+                this.chart.data.datasets[0].data = hourlyData;
+                this.chart.update();
+            },
+
+            initClock() {
+                setInterval(() => {
+                    const now = new Date();
+                    document.getElementById('live-clock').innerText = now.toLocaleTimeString('vi-VN');
+                    document.getElementById('live-date').innerText = now.toLocaleDateString('vi-VN');
+                }, 1000);
+            }
+        };
+
+        // Kích hoạt ứng dụng khi trang tải xong
+        window.onload = () => app.init();
+    </script>
+</body>
+</html>
