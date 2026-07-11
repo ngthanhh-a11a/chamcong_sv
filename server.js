@@ -335,6 +335,17 @@ app.get('/api/report/excel', async (req, res) => {
     }
 });
 
+// ==========================================
+// API GIÁM SÁT HỆ THỐNG (SYSTEM HEALTH)
+// ==========================================
+app.get('/api/health', (req, res) => {
+    res.json({
+        uptime: Math.floor(process.uptime()), // Thời gian server đã chạy (giây)
+        memory: Math.round(process.memoryUsage().rss / 1024 / 1024), // Ram tiêu thụ (MB)
+        dbStatus: mongoose.connection.readyState === 1 ? "Connected" : "Disconnected"
+    });
+});
+
 // 5. KHỞI CHẠY SERVER
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
