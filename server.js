@@ -114,15 +114,18 @@ app.post('/api/attendance', async (req, res) => {
 // API lấy lịch sử cho Dashboard (Đã nâng cấp: Hỗ trợ lọc theo ngày)
 app.get('/api/logs', async (req, res) => {
     try {
-        const { date } = req.query; // Nhận tham số ngày từ Frontend
+        const dateQuery = req.query.date; // Nhận tham số ngày từ Frontend (VD: '2026-07-12')
         
-        // Logic tạo bộ lọc theo ngày
-        let dateFilter = {};
-        if (date) {
-            // Lọc từ 00:00:00 đến 23:59:59 của ngày được chọn
-            const startOfDay = new Date(`${date}T00:00:00.000Z`);
-            const endOfDay = new Date(`${date}T23:59:59.999Z`);
-            dateFilter = { timestamp: { $gte: startOfDay, $lte: endOfDay } };
+        // Logic tạo bộ lọc theo ngày (ĐÃ CHUẨN HÓA MÚI GIỜ VIỆT NAM)
+        let filter = {};
+        if (dateQuery) {
+            // Định nghĩa mốc thời gian bắt đầu và kết thúc của ngày đó THEO GIỜ VIỆT NAM (UTC+7)
+            // Ép Node.js hiểu rằng chuỗi '00:00:00' này là của múi giờ +07:00
+            const startOfDayVN = new Date(`${dateQuery}T00:00:00+07:00`);
+            const endOfDayVN = new Date(`${dateQuery}T23:59:59+07:00`);
+
+            // Yêu cầu MongoDB lọc dữ liệu nằm giữa 2 mốc thời gian này
+            filter = { timestamp: { $gte: startOfDayVN, $lte: endOfDayVN } };
         }
 
         const shiftConfig = await Shift.findOne() || { startTime: "08:00", lateThreshold: 0 };
@@ -130,7 +133,7 @@ app.get('/api/logs', async (req, res) => {
         const shiftTotalMinutes = (h * 60) + m;
 
         const logs = await AttendanceLog.aggregate([
-            { $match: dateFilter }, // Áp dụng bộ lọc ngày vào Database
+            { $match: filter }, // Áp dụng bộ lọc ngày vào Database
             { $sort: { timestamp: -1 } },
             // { $limit: 50 }, // Đã ẩn limit để biểu đồ vẽ được toàn bộ dữ liệu trong ngày
             { $lookup: { from: 'students', localField: 'uid', foreignField: 'uid', as: 'studentInfo' } }
@@ -161,7 +164,8 @@ app.get('/api/logs', async (req, res) => {
 
         res.json(formattedLogs);
     } catch (error) {
-        res.status(500).json({ error: "Không thể lấy dữ liệu" });
+        console.error("Lỗi truy xuất dữ liệu:", error);
+        res.status(500).json({ error: "Lỗi truy xuất dữ liệu" });
     }
 });
 
