@@ -111,42 +111,54 @@ app.post('/api/attendance', async (req, res) => {
 });
 
 // API lấy lịch sử cho Dashboard
-// API lấy lịch sử cho Dashboard (Bản vá SQA: Tính toán trạng thái động)
+// API lấy lịch sử cho Dashboard (Đã nâng cấp: Hỗ trợ lọc theo ngày)
 app.get('/api/logs', async (req, res) => {
     try {
+        const { date } = req.query; // Nhận tham số ngày từ Frontend
+        
+        // Logic tạo bộ lọc theo ngày
+        let dateFilter = {};
+        if (date) {
+            // Lọc từ 00:00:00 đến 23:59:59 của ngày được chọn
+            const startOfDay = new Date(`${date}T00:00:00.000Z`);
+            const endOfDay = new Date(`${date}T23:59:59.999Z`);
+            dateFilter = { timestamp: { $gte: startOfDay, $lte: endOfDay } };
+        }
+
+        const shiftConfig = await Shift.findOne() || { startTime: "08:00", lateThreshold: 0 };
+        const [h, m] = shiftConfig.startTime.split(':').map(Number);
+        const shiftTotalMinutes = (h * 60) + m;
+
         const logs = await AttendanceLog.aggregate([
+            { $match: dateFilter }, // Áp dụng bộ lọc ngày vào Database
             { $sort: { timestamp: -1 } },
-            { $limit: 50 },
+            // { $limit: 50 }, // Đã ẩn limit để biểu đồ vẽ được toàn bộ dữ liệu trong ngày
             { $lookup: { from: 'students', localField: 'uid', foreignField: 'uid', as: 'studentInfo' } }
         ]);
 
-        // Lấy cấu hình ca một lần duy nhất để tối ưu
-        const shiftConfig = await Shift.findOne();
-
-        // Map qua từng log để xử lý logic trước khi trả về web
         const formattedLogs = logs.map(log => {
             const studentExists = log.studentInfo && log.studentInfo.length > 0;
             const fullName = studentExists ? log.studentInfo[0].fullName : null;
-
             let dynamicStatus = "Chưa đăng ký";
-
-            if (studentExists && shiftConfig) {
-                const logTime = new Date(log.timestamp);
-                const logTotalMinutes = logTime.getHours() * 60 + logTime.getMinutes();
-
-                const [shiftHour, shiftMin] = shiftConfig.startTime.split(':').map(Number);
-                const shiftTotalMinutes = (shiftHour * 60) + shiftMin;
-
-                dynamicStatus = logTotalMinutes <= (shiftTotalMinutes + shiftConfig.lateThreshold) ? "Đúng giờ" : "Đi muộn";
+            
+            if (studentExists) {
+                const logDate = new Date(log.timestamp);
+                const logTotalMinutes = (logDate.getHours() * 60) + logDate.getMinutes();
+                if (logTotalMinutes <= (shiftTotalMinutes + shiftConfig.lateThreshold)) {
+                    dynamicStatus = "Đúng giờ";
+                } else {
+                    dynamicStatus = "Đi muộn";
+                }
             }
 
             return {
                 uid: log.uid,
                 timestamp: log.timestamp,
                 status: dynamicStatus,
-                fullName: fullName
+                fullName: fullName,
             };
         });
+
         res.json(formattedLogs);
     } catch (error) {
         res.status(500).json({ error: "Không thể lấy dữ liệu" });
