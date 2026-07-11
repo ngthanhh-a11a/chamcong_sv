@@ -336,6 +336,57 @@ app.get('/api/report/excel', async (req, res) => {
 });
 
 // ==========================================
+// API TRA CỨU CÁ NHÂN (STUDENT PORTAL)
+// ==========================================
+app.get('/api/logs/student/:uid', async (req, res) => {
+    try {
+        const uid = req.params.uid.toUpperCase(); // Lấy mã UID từ đường link
+        
+        // 1. Kiểm tra xem sinh viên có tồn tại không
+        const student = await Student.findOne({ uid: uid });
+        if (!student) {
+            return res.status(404).json({ error: "Không tìm thấy thẻ sinh viên này trên hệ thống!" });
+        }
+
+        // 2. Lấy cấu hình ca làm việc hiện tại để xét Đi muộn/Đúng giờ
+        const shiftConfig = await Shift.findOne() || { startTime: "08:00", lateThreshold: 0 };
+        const [h, m] = shiftConfig.startTime.split(':').map(Number);
+        const shiftTotalMinutes = (h * 60) + m;
+
+        // 3. Truy vấn toàn bộ lịch sử của riêng sinh viên này
+        const logs = await AttendanceLog.find({ uid: uid }).sort({ timestamp: -1 });
+
+        // 4. Thống kê và format dữ liệu
+        let onTimeCount = 0;
+        let lateCount = 0;
+
+        const formattedLogs = logs.map(log => {
+            const logDate = new Date(log.timestamp);
+            const logTotalMinutes = (logDate.getHours() * 60) + logDate.getMinutes();
+            let status = "Đi muộn";
+            
+            if (logTotalMinutes <= (shiftTotalMinutes + shiftConfig.lateThreshold)) {
+                status = "Đúng giờ";
+                onTimeCount++;
+            } else {
+                lateCount++;
+            }
+
+            return { timestamp: log.timestamp, status: status };
+        });
+
+        // 5. Trả kết quả về cho Frontend
+        res.json({
+            student: student,
+            stats: { total: logs.length, onTime: onTimeCount, late: lateCount },
+            logs: formattedLogs
+        });
+    } catch (error) {
+        res.status(500).json({ error: "Lỗi truy vấn dữ liệu" });
+    }
+});
+
+// ==========================================
 // API GIÁM SÁT HỆ THỐNG (SYSTEM HEALTH)
 // ==========================================
 app.get('/api/health', (req, res) => {
