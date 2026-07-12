@@ -254,7 +254,7 @@ app.post('/api/students', async (req, res) => {
                 const shiftStartMinutes = (shiftHour * 60) + shiftMin;
                 const logTotalMinutes = logTime.getHours() * 60 + logTime.getMinutes();
 
-                log.status = logTotalMinutes <= (shiftStartMinutes + shiftStartMinutes.lateThreshold) ? "Đúng giờ" : "Đi muộn";
+                log.status = logTotalMinutes <= (shiftStartMinutes + identifiedShift.lateThreshold) ? "Đúng giờ" : "Đi muộn";
                 log.shift = identifiedShift._id; // Gán cả ca học đã nhận diện được
             } else {
                 log.status = "Ngoài giờ";
@@ -300,60 +300,40 @@ app.put('/api/students/:uid', async (req, res) => {
     }
 });
 
-// API lấy toàn bộ cấu hình ca
-app.get('/api/settings/shifts', async (req, res) => {
+// ==========================================
+// API: CÀI ĐẶT HỆ THỐNG & CA HỌC
+// ==========================================
+
+// API lấy cấu hình các ca học hiện tại
+app.get('/api/settings/shift', async (req, res) => {
     try {
+        // Tìm tất cả ca học và sắp xếp theo giờ bắt đầu
         const shifts = await Shift.find().sort({ startTime: 1 });
         res.json(shifts);
-    } catch (err) { res.status(500).json({ error: "Lỗi Server" }); }
-});
-
-// API cập nhật một ca học cụ thể
-app.put('/api/settings/shifts/:id', async (req, res) => {
-    try {
-        const { shiftName, startTime, endTime, lateThreshold, isActive } = req.body;
-        const updatedShift = await Shift.findByIdAndUpdate(
-            req.params.id,
-            {
-                shiftName,
-                startTime,
-                endTime,
-                lateThreshold: Number(lateThreshold) || 0,
-                isActive
-            },
-            { new: true }
-        );
-        if (!updatedShift) {
-            return res.status(404).json({ error: "Không tìm thấy ca học" });
-        }
-        res.json({ message: "Cập nhật cấu hình thành công!", shift: updatedShift });
-    } catch (err) { res.status(500).json({ error: "Lỗi lưu cấu hình" }); }
-});
-
-// API tạo một ca học mới
-app.post('/api/settings/shifts', async (req, res) => {
-    try {
-        const newShift = new Shift(req.body);
-        await newShift.save();
-        res.status(201).json({ message: "Tạo ca mới thành công", shift: newShift });
     } catch (error) {
-        // Bắt lỗi unique key (shiftID)
-        if (error.code === 11000) {
-            return res.status(400).json({ error: `Mã ca (shiftID) '${req.body.shiftID}' đã tồn tại.` });
-        }
-        res.status(400).json({ error: "Lỗi tạo ca mới", details: error.message });
+        res.status(500).json({ error: "Lỗi truy xuất cấu hình ca học" });
     }
 });
 
-// API xóa một ca học
-app.delete('/api/settings/shifts/:id', async (req, res) => {
+// API lưu/cập nhật toàn bộ cấu hình ca học
+app.post('/api/settings/shift', async (req, res) => {
     try {
-        const deletedShift = await Shift.findByIdAndDelete(req.params.id);
-        if (!deletedShift) {
-            return res.status(404).json({ error: "Không tìm thấy ca để xóa" });
+        const incomingShifts = req.body; // Nhận mảng các ca học từ Frontend
+
+        if (!Array.isArray(incomingShifts)) {
+            return res.status(400).json({ error: "Dữ liệu gửi lên phải là một mảng (array) các ca học." });
         }
-        res.json({ message: "Xóa ca thành công", shift: deletedShift });
-    } catch (err) { res.status(500).json({ error: "Lỗi lưu cấu hình" }); }
+
+        // Xóa trắng cấu hình cũ và thay bằng cấu hình mới
+        await Shift.deleteMany({});
+        await Shift.insertMany(incomingShifts);
+
+        console.log(`[Cấu hình] Đã cập nhật lại toàn bộ ${incomingShifts.length} ca học.`);
+        res.json({ message: "Lưu cấu hình hệ thống thành công!" });
+    } catch (error) {
+        console.error("Lỗi lưu cấu hình ca học:", error);
+        res.status(500).json({ error: "Lỗi lưu cấu hình ca học" });
+    }
 });
 
 // API xuất báo cáo ra file Excel
