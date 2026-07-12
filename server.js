@@ -324,6 +324,23 @@ app.post('/api/settings/shift', async (req, res) => {
             return res.status(400).json({ error: "Dữ liệu gửi lên phải là một mảng (array) các ca học." });
         }
 
+        // --- BƯỚC VALIDATION AN TOÀN (TRƯỚC KHI GHI VÀO DB) ---
+
+        // 1. Kiểm tra xem có shiftID nào bị trùng trong mảng gửi lên không
+        const shiftIDs = incomingShifts.map(s => s.shiftID);
+        const hasDuplicateIDs = new Set(shiftIDs).size !== shiftIDs.length;
+        if (hasDuplicateIDs) {
+            // Dùng mã lỗi 409 (Conflict) để báo cho Frontend biết có sự trùng lặp dữ liệu
+            return res.status(409).json({ error: "Lỗi: Mã ca (shiftID) không được trùng lặp trong danh sách." });
+        }
+
+        // 2. Validate từng object trong mảng để đảm bảo đúng cấu trúc Schema
+        for (const shiftData of incomingShifts) {
+            const shiftDoc = new Shift(shiftData);
+            await shiftDoc.validate(); // Sẽ throw ValidationError nếu không hợp lệ
+        }
+
+        // --- KHI DỮ LIỆU ĐÃ HỢP LỆ, TIẾN HÀNH GHI ĐÈ ---
         // Xóa trắng cấu hình cũ và thay bằng cấu hình mới
         await Shift.deleteMany({});
         await Shift.insertMany(incomingShifts);
@@ -332,7 +349,15 @@ app.post('/api/settings/shift', async (req, res) => {
         res.json({ message: "Lưu cấu hình hệ thống thành công!" });
     } catch (error) {
         console.error("Lỗi lưu cấu hình ca học:", error);
-        res.status(500).json({ error: "Lỗi lưu cấu hình ca học" });
+        // Phản hồi lỗi validation chi tiết hơn cho Frontend
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ 
+                error: "Dữ liệu ca học không hợp lệ. Vui lòng kiểm tra lại các trường đã nhập.",
+                details: error.message 
+            });
+        }
+        // Các lỗi 500 khác không lường trước được
+        res.status(500).json({ error: "Lỗi máy chủ khi lưu cấu hình ca học." });
     }
 });
 
