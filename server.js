@@ -30,28 +30,64 @@ const Student = mongoose.model('Student', studentSchema);
 const logSchema = new mongoose.Schema({
     uid: { type: String, required: true },
     timestamp: { type: Date, default: Date.now },
-    status: { type: String, enum: ['Đúng giờ', 'Đi muộn', 'Chưa đăng ký'] }
+    status: { type: String, enum: ['Đúng giờ', 'Đi muộn', 'Ngoài giờ', 'Chưa đăng ký'] },
+    shift: { type: mongoose.Schema.Types.ObjectId, ref: 'Shift', default: null }
 });
 const AttendanceLog = mongoose.model('AttendanceLog', logSchema);
 
 const shiftSchema = new mongoose.Schema({
-    shiftName: { type: String, required: true, default: "Ca Hành chính" }, // VD: "Ca Sáng 23DTH1C", "Hành chính"
-    startTime: { type: String, required: true, default: "07:30" }, // VD: "07:30"
-    endTime: { type: String, required: true, default: "17:00" },   // VD: "11:30"
-    lateThreshold: { type: Number, default: 15 }, // Số phút cho phép đi trễ (VD: 15 phút)
+    shiftID: { type: String, required: true, unique: true }, // Vd: "MORNING", "AFTERNOON"
+    shiftName: { type: String, required: true }, // Vd: "Ca Sáng", "Ca Chiều"
+    startTime: { type: String, required: true }, // Vd: "07:00"
+    endTime: { type: String, required: true },   // Vd: "11:30"
+    lateThreshold: { type: Number, default: 15 }, // Vd: 15 phút
     isActive: { type: Boolean, default: true }
 });
 const Shift = mongoose.model('Shift', shiftSchema);
 
 // Tự động tạo cấu hình mặc định nếu database chưa có
-async function initDefaultShift() {
+async function initDefaultShifts() {
     const count = await Shift.countDocuments({});
     if (count === 0) {
-        await new Shift().save();
-        console.log("⚙️ Đã tạo cấu hình Ca động mặc định vào Database");
+        await Shift.insertMany([
+            { shiftID: 'MORNING', shiftName: 'Ca Sáng', startTime: '07:30', endTime: '11:30', lateThreshold: 15, isActive: true },
+            { shiftID: 'AFTERNOON', shiftName: 'Ca Chiều', startTime: '13:00', endTime: '17:00', lateThreshold: 15, isActive: true }
+        ]);
+        console.log("⚙️ Đã tạo 2 ca học mặc định (Sáng, Chiều) vào Database");
     }
 }
-initDefaultShift();
+initDefaultShifts();
+
+// Thuật toán nhận diện ca học tự động
+const findShiftForTime = (time, activeShifts) => {
+    const now = new Date(time);
+    const nowTotalMinutes = now.getHours() * 60 + now.getMinutes();
+    const PRE_SHIFT_WINDOW = 30; // Cho phép quẹt thẻ trước 30 phút
+
+    // Sắp xếp các ca theo thời gian bắt đầu để ưu tiên ca sớm hơn nếu có chồng chéo
+    const sortedShifts = [...activeShifts].sort((a, b) => {
+        const aStart = a.startTime.split(':').map(Number);
+        const bStart = b.startTime.split(':').map(Number);
+        return (aStart[0] * 60 + aStart[1]) - (bStart[0] * 60 + bStart[1]);
+    });
+
+    for (const shift of sortedShifts) {
+        const [startHour, startMin] = shift.startTime.split(':').map(Number);
+        const shiftStartMinutes = (startHour * 60) + startMin;
+
+        const [endHour, endMin] = shift.endTime.split(':').map(Number);
+        const shiftEndMinutes = (endHour * 60) + endMin;
+
+        const windowStart = shiftStartMinutes - PRE_SHIFT_WINDOW;
+        const windowEnd = shiftEndMinutes;
+
+        if (nowTotalMinutes >= windowStart && nowTotalMinutes <= windowEnd) {
+            return shift; // Trả về ca học phù hợp đầu tiên tìm thấy
+        }
+    }
+
+    return null; // Không tìm thấy ca học phù hợp
+};
 
 // 4. ĐỊNH TUYẾN API (ROUTES)
 
@@ -59,49 +95,55 @@ initDefaultShift();
 app.post('/api/attendance', async (req, res) => {
     try {
         const { uid } = req.body;
-        
         if (!uid) {
             return res.status(400).json({ error: "Thiếu mã UID" });
         }
 
         console.log(`📡 Đang xử lý thẻ UID: ${uid}`);
 
-        // Kiểm tra xem thẻ đã đăng ký chưa
+        // 1. Lấy thông tin sinh viên và các ca học đang hoạt động
         const student = await Student.findOne({ uid });
+        const activeShifts = await Shift.find({ isActive: true });
+        const now = new Date();
 
-        // Phân loại trạng thái
-        // Lấy cấu hình ca hiện tại từ Database
-        const shiftConfig = await Shift.findOne();
+        // 2. Chạy thuật toán nhận diện ca học
+        const identifiedShift = findShiftForTime(now, activeShifts);
+
+        // 3. Phân loại trạng thái điểm danh
         let currentStatus = "Chưa đăng ký";
-        
-        if (student && shiftConfig) {
-            const now = new Date();
-            const currentHour = now.getHours();
-            const currentMinute = now.getMinutes();
-            const nowTotalMinutes = (currentHour * 60) + currentMinute; // Tổng phút hiện tại
-            
-            // Tách giờ cấu hình (VD: "07:30" -> 7 và 30)
-            const [shiftHour, shiftMin] = shiftConfig.startTime.split(':').map(Number);
-            const shiftTotalMinutes = (shiftHour * 60) + shiftMin; // Tổng phút quy định
-            
-            // So sánh: Nếu thời gian quẹt <= (Giờ quy định + Phút châm chước)
-            if (nowTotalMinutes <= (shiftTotalMinutes + shiftConfig.lateThreshold)) {
-                currentStatus = "Đúng giờ";
+        let studentName = "Thẻ lạ";
+        let shiftIdToLog = null;
+
+        if (student) { // Nếu thẻ đã được đăng ký
+            studentName = student.fullName;
+            if (identifiedShift) { // Nếu thời gian quẹt thẻ rơi vào một ca học
+                shiftIdToLog = identifiedShift._id;
+                const [shiftHour, shiftMin] = identifiedShift.startTime.split(':').map(Number);
+                const shiftStartMinutes = (shiftHour * 60) + shiftMin;
+                const nowTotalMinutes = now.getHours() * 60 + now.getMinutes();
+
+                // So sánh với mốc giờ vào lớp + số phút châm chước
+                if (nowTotalMinutes <= (shiftStartMinutes + identifiedShift.lateThreshold)) {
+                    currentStatus = "Đúng giờ";
+                } else {
+                    currentStatus = "Đi muộn";
+                }
             } else {
-                currentStatus = "Đi muộn";
+                currentStatus = "Ngoài giờ";
             }
         }
+        // Nếu thẻ chưa đăng ký, trạng thái mặc định là "Chưa đăng ký"
 
-        // Lưu log vào database
-        const newLog = new AttendanceLog({ uid, status: currentStatus });
+        // 4. Lưu log vào database
+        const newLog = new AttendanceLog({ uid, status: currentStatus, shift: shiftIdToLog });
         await newLog.save();
 
-        console.log(`✅ Lưu thành công: ${student ? student.fullName : 'Thẻ lạ'} - Trạng thái: ${currentStatus}`);
+        console.log(`✅ Lưu thành công: ${studentName} - Ca: ${identifiedShift ? identifiedShift.shiftName : 'N/A'} - Trạng thái: ${currentStatus}`);
 
-        res.status(201).json({ 
-            message: "Điểm danh thành công", 
-            student: student ? student.fullName : "Thẻ lạ",
-            status: currentStatus 
+        res.status(201).json({
+            message: "Điểm danh thành công",
+            student: studentName,
+            status: currentStatus
         });
 
     } catch (error) {
@@ -128,10 +170,8 @@ app.get('/api/logs', async (req, res) => {
             filter = { timestamp: { $gte: startOfDayVN, $lte: endOfDayVN } };
         }
 
-        const shiftConfig = await Shift.findOne() || { startTime: "08:00", lateThreshold: 0 };
-        const [h, m] = shiftConfig.startTime.split(':').map(Number);
-        const shiftTotalMinutes = (h * 60) + m;
-
+        // Lấy tất cả các ca để có thể tính lại status cho log cũ
+        const allShifts = await Shift.find({});
         const logs = await AttendanceLog.aggregate([
             { $match: filter }, // Áp dụng bộ lọc ngày vào Database
             { $sort: { timestamp: -1 } },
@@ -145,12 +185,20 @@ app.get('/api/logs', async (req, res) => {
             let dynamicStatus = "Chưa đăng ký";
             
             if (studentExists) {
-                const logDate = new Date(log.timestamp);
-                const logTotalMinutes = (logDate.getHours() * 60) + logDate.getMinutes();
-                if (logTotalMinutes <= (shiftTotalMinutes + shiftConfig.lateThreshold)) {
-                    dynamicStatus = "Đúng giờ";
+                const logTime = new Date(log.timestamp);
+                // Chạy lại thuật toán nhận diện ca cho từng log
+                const identifiedShift = findShiftForTime(logTime, allShifts);
+
+                if (identifiedShift) {
+                    const [shiftHour, shiftMin] = identifiedShift.startTime.split(':').map(Number);
+                    const shiftStartMinutes = (shiftHour * 60) + shiftMin;
+                    const logTotalMinutes = logTime.getHours() * 60 + logTime.getMinutes();
+                    
+                    dynamicStatus = logTotalMinutes <= (shiftStartMinutes + identifiedShift.lateThreshold) 
+                        ? "Đúng giờ" 
+                        : "Đi muộn";
                 } else {
-                    dynamicStatus = "Đi muộn";
+                    dynamicStatus = "Ngoài giờ";
                 }
             }
 
@@ -194,23 +242,29 @@ app.post('/api/students', async (req, res) => {
         await newStudent.save();
         
         // SQA Logic: Quét lại toàn bộ log cũ của UID này và cập nhật trạng thái
-        const shiftConfig = await Shift.findOne();
+        const allShifts = await Shift.find({});
         const oldLogs = await AttendanceLog.find({ uid: uid });
 
-        if (shiftConfig) {
-            const [shiftHour, shiftMin] = shiftConfig.startTime.split(':').map(Number);
-            const shiftTotalMinutes = (shiftHour * 60) + shiftMin;
+        for (let log of oldLogs) {
+            const logTime = new Date(log.timestamp);
+            const identifiedShift = findShiftForTime(logTime, allShifts);
 
-            for (let log of oldLogs) {
-                const logTime = new Date(log.timestamp);
+            if (identifiedShift) {
+                const [shiftHour, shiftMin] = identifiedShift.startTime.split(':').map(Number);
+                const shiftStartMinutes = (shiftHour * 60) + shiftMin;
                 const logTotalMinutes = logTime.getHours() * 60 + logTime.getMinutes();
 
-                log.status = logTotalMinutes <= (shiftTotalMinutes + shiftConfig.lateThreshold) ? "Đúng giờ" : "Đi muộn";
-                await log.save();
+                log.status = logTotalMinutes <= (shiftStartMinutes + shiftStartMinutes.lateThreshold) ? "Đúng giờ" : "Đi muộn";
+                log.shift = identifiedShift._id; // Gán cả ca học đã nhận diện được
+            } else {
+                log.status = "Ngoài giờ";
+                log.shift = null;
             }
+            await log.save();
         }
 
-        console.log(`[Đăng ký mới] Kích hoạt thẻ ${uid} cho ${fullName}`);
+
+        console.log(`[Đăng ký mới] Kích hoạt thẻ ${uid} cho ${fullName} và cập nhật ${oldLogs.length} log cũ.`);
         res.status(201).json({ message: "Đăng ký sinh viên thành công" });
     } catch (error) {
         console.error("Lỗi khi đăng ký thẻ:", error);
@@ -246,27 +300,59 @@ app.put('/api/students/:uid', async (req, res) => {
     }
 });
 
-// API lấy cấu hình ca hiện tại
-app.get('/api/settings/shift', async (req, res) => {
+// API lấy toàn bộ cấu hình ca
+app.get('/api/settings/shifts', async (req, res) => {
     try {
-        const shift = await Shift.findOne();
-        res.json(shift);
+        const shifts = await Shift.find().sort({ startTime: 1 });
+        res.json(shifts);
     } catch (err) { res.status(500).json({ error: "Lỗi Server" }); }
 });
 
-// API cập nhật cấu hình ca
-app.put('/api/settings/shift', async (req, res) => {
+// API cập nhật một ca học cụ thể
+app.put('/api/settings/shifts/:id', async (req, res) => {
     try {
-        const { shiftName, startTime, endTime, lateThreshold } = req.body;
-        let shift = await Shift.findOne();
-        if (shift) {
-            shift.shiftName = shiftName;
-            shift.startTime = startTime;
-            shift.endTime = endTime;
-            shift.lateThreshold = Number(lateThreshold) || 0;
-            await shift.save();
+        const { shiftName, startTime, endTime, lateThreshold, isActive } = req.body;
+        const updatedShift = await Shift.findByIdAndUpdate(
+            req.params.id,
+            {
+                shiftName,
+                startTime,
+                endTime,
+                lateThreshold: Number(lateThreshold) || 0,
+                isActive
+            },
+            { new: true }
+        );
+        if (!updatedShift) {
+            return res.status(404).json({ error: "Không tìm thấy ca học" });
         }
-        res.json({ message: "Cập nhật cấu hình thành công!", shift });
+        res.json({ message: "Cập nhật cấu hình thành công!", shift: updatedShift });
+    } catch (err) { res.status(500).json({ error: "Lỗi lưu cấu hình" }); }
+});
+
+// API tạo một ca học mới
+app.post('/api/settings/shifts', async (req, res) => {
+    try {
+        const newShift = new Shift(req.body);
+        await newShift.save();
+        res.status(201).json({ message: "Tạo ca mới thành công", shift: newShift });
+    } catch (error) {
+        // Bắt lỗi unique key (shiftID)
+        if (error.code === 11000) {
+            return res.status(400).json({ error: `Mã ca (shiftID) '${req.body.shiftID}' đã tồn tại.` });
+        }
+        res.status(400).json({ error: "Lỗi tạo ca mới", details: error.message });
+    }
+});
+
+// API xóa một ca học
+app.delete('/api/settings/shifts/:id', async (req, res) => {
+    try {
+        const deletedShift = await Shift.findByIdAndDelete(req.params.id);
+        if (!deletedShift) {
+            return res.status(404).json({ error: "Không tìm thấy ca để xóa" });
+        }
+        res.json({ message: "Xóa ca thành công", shift: deletedShift });
     } catch (err) { res.status(500).json({ error: "Lỗi lưu cấu hình" }); }
 });
 
@@ -279,7 +365,7 @@ app.get('/api/report/excel', async (req, res) => {
             { $lookup: { from: 'students', localField: 'uid', foreignField: 'uid', as: 'studentInfo' } }
         ]);
 
-        const shiftConfig = await Shift.findOne();
+        const allShifts = await Shift.find({});
 
         // 2. Tạo Workbook và Worksheet mới
         const workbook = new exceljs.Workbook();
@@ -309,12 +395,17 @@ app.get('/api/report/excel', async (req, res) => {
             const fullName = studentExists ? log.studentInfo[0].fullName : 'Thẻ lạ';
             let dynamicStatus = "Chưa đăng ký";
 
-            if (studentExists && shiftConfig) {
+            if (studentExists) {
                 const logTime = new Date(log.timestamp);
-                const logTotalMinutes = logTime.getHours() * 60 + logTime.getMinutes();
-                const [shiftHour, shiftMin] = shiftConfig.startTime.split(':').map(Number);
-                const shiftTotalMinutes = (shiftHour * 60) + shiftMin;
-                dynamicStatus = logTotalMinutes <= (shiftTotalMinutes + shiftConfig.lateThreshold) ? "Đúng giờ" : "Đi muộn";
+                const identifiedShift = findShiftForTime(logTime, allShifts);
+                if (identifiedShift) {
+                    const logTotalMinutes = logTime.getHours() * 60 + logTime.getMinutes();
+                    const [shiftHour, shiftMin] = identifiedShift.startTime.split(':').map(Number);
+                    const shiftTotalMinutes = (shiftHour * 60) + shiftMin;
+                    dynamicStatus = logTotalMinutes <= (shiftTotalMinutes + identifiedShift.lateThreshold) ? "Đúng giờ" : "Đi muộn";
+                } else {
+                    dynamicStatus = "Ngoài giờ";
+                }
             }
 
             worksheet.addRow({
@@ -353,9 +444,7 @@ app.get('/api/logs/student/:uid', async (req, res) => {
         }
 
         // 2. Lấy cấu hình ca làm việc hiện tại để xét Đi muộn/Đúng giờ
-        const shiftConfig = await Shift.findOne() || { startTime: "08:00", lateThreshold: 0 };
-        const [h, m] = shiftConfig.startTime.split(':').map(Number);
-        const shiftTotalMinutes = (h * 60) + m;
+        const allShifts = await Shift.find({});
 
         // 3. Truy vấn toàn bộ lịch sử của riêng sinh viên này
         const logs = await AttendanceLog.find({ uid: uid }).sort({ timestamp: -1 });
@@ -363,17 +452,27 @@ app.get('/api/logs/student/:uid', async (req, res) => {
         // 4. Thống kê và format dữ liệu
         let onTimeCount = 0;
         let lateCount = 0;
+        let outsideHoursCount = 0; // Thêm biến đếm
 
         const formattedLogs = logs.map(log => {
-            const logDate = new Date(log.timestamp);
-            const logTotalMinutes = (logDate.getHours() * 60) + logDate.getMinutes();
-            let status = "Đi muộn";
+            const logTime = new Date(log.timestamp);
+            const identifiedShift = findShiftForTime(logTime, allShifts);
+            let status = "Ngoài giờ";
             
-            if (logTotalMinutes <= (shiftTotalMinutes + shiftConfig.lateThreshold)) {
-                status = "Đúng giờ";
-                onTimeCount++;
+            if (identifiedShift) {
+                const logTotalMinutes = (logTime.getHours() * 60) + logTime.getMinutes();
+                const [h, m] = identifiedShift.startTime.split(':').map(Number);
+                const shiftTotalMinutes = (h * 60) + m;
+                
+                if (logTotalMinutes <= (shiftTotalMinutes + identifiedShift.lateThreshold)) {
+                    status = "Đúng giờ";
+                    onTimeCount++;
+                } else {
+                    status = "Đi muộn";
+                    lateCount++;
+                }
             } else {
-                lateCount++;
+                outsideHoursCount++;
             }
 
             return { timestamp: log.timestamp, status: status };
@@ -382,7 +481,7 @@ app.get('/api/logs/student/:uid', async (req, res) => {
         // 5. Trả kết quả về cho Frontend
         res.json({
             student: student,
-            stats: { total: logs.length, onTime: onTimeCount, late: lateCount },
+            stats: { total: logs.length, onTime: onTimeCount, late: lateCount, outside: outsideHoursCount },
             logs: formattedLogs
         });
     } catch (error) {
