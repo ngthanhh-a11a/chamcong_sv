@@ -361,6 +361,69 @@ app.post('/api/settings/shift', async (req, res) => {
     }
 });
 
+// ==========================================
+// API: XUẤT DỮ LIỆU JSON THEO KHOẢNG THỜI GIAN
+// ==========================================
+app.get('/api/logs/export', async (req, res) => {
+    try {
+        const { start, end } = req.query; // Nhận ngày bắt đầu và kết thúc từ Frontend
+        let filter = {};
+
+        if (start && end) {
+            // Ép mốc thời gian theo chuẩn giờ Việt Nam (UTC+7)
+            // Bắt đầu từ 00:00:00 của ngày Start đến 23:59:59 của ngày End
+            const startTime = new Date(`${start}T00:00:00+07:00`);
+            const endTime = new Date(`${end}T23:59:59+07:00`);
+
+            filter.timestamp = {
+                $gte: startTime,
+                $lte: endTime
+            };
+        }
+
+        // Lấy toàn bộ dữ liệu trong khoảng thời gian này, sắp xếp mới nhất lên đầu
+        const logs = await AttendanceLog.aggregate([
+            { $match: filter },
+            { $sort: { timestamp: -1 } },
+            { $lookup: { from: 'students', localField: 'uid', foreignField: 'uid', as: 'studentInfo' } }
+        ]);
+
+        const allShifts = await Shift.find({});
+
+        // Map lại dữ liệu cho đẹp trước khi gửi về Frontend để Excel hiển thị rõ ràng
+        const exportData = logs.map(log => {
+            const studentExists = log.studentInfo && log.studentInfo.length > 0;
+            const fullName = studentExists ? log.studentInfo[0].fullName : 'Thẻ lạ';
+            let dynamicStatus = "Chưa đăng ký";
+
+            if (studentExists) {
+                const logTime = new Date(log.timestamp);
+                const identifiedShift = findShiftForTime(logTime, allShifts);
+                if (identifiedShift) {
+                    const logTotalMinutes = logTime.getHours() * 60 + logTime.getMinutes();
+                    const [shiftHour, shiftMin] = identifiedShift.startTime.split(':').map(Number);
+                    const shiftTotalMinutes = (shiftHour * 60) + shiftMin;
+                    dynamicStatus = logTotalMinutes <= (shiftTotalMinutes + identifiedShift.lateThreshold) ? "Đúng giờ" : "Đi muộn";
+                } else {
+                    dynamicStatus = "Ngoài giờ";
+                }
+            }
+
+            return {
+                "Mã Thẻ (UID)": log.uid,
+                "Tên Sinh Viên": fullName,
+                "Thời Gian Quẹt": new Date(log.timestamp).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }),
+                "Trạng Thái": dynamicStatus
+            };
+        });
+
+        res.json(exportData);
+    } catch (error) {
+        console.error("LỖI XUẤT DỮ LIỆU TẠI BACKEND:", error);
+        res.status(500).json({ error: "Lỗi trích xuất dữ liệu" });
+    }
+});
+
 // API xuất báo cáo ra file Excel
 app.get('/api/report/excel', async (req, res) => {
     try {
