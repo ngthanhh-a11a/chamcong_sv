@@ -435,24 +435,43 @@ app.get('/api/logs/export', async (req, res) => {
     }
 });
 
-// API xuất báo cáo ra file Excel
+// ==========================================
+// API: XUẤT EXCEL (ĐÃ FIX LỖI ĐỒNG BỘ BIẾN)
+// ==========================================
 app.get('/api/report/excel', async (req, res) => {
     try {
-        // 1. Lấy toàn bộ log và thông tin sinh viên liên quan
+        // 1. Nhận đúng tên biến mà Frontend gửi lên (startDate, endDate)
+        const { startDate, endDate } = req.query; 
+        
+        let filter = {};
+
+        // 2. Kiểm tra xem có nhận được ngày không và tạo bộ lọc
+        if (startDate && endDate && startDate !== 'undefined' && endDate !== 'undefined') {
+            // Ép múi giờ VN (UTC+7) từ 0h00 ngày bắt đầu đến 23h59 ngày kết thúc
+            const startTime = new Date(`${startDate}T00:00:00+07:00`);
+            const endTime = new Date(`${endDate}T23:59:59+07:00`);
+
+            // Đảm bảo trường lưu thời gian trong CSDL của bạn tên là 'timestamp'
+            filter.timestamp = { $gte: startTime, $lte: endTime };
+            console.log(`[API EXCEL] Đang lọc dữ liệu từ ${startDate} đến ${endDate}`);
+        }
+
+        // 3. Truy vấn Database với bộ lọc đã thiết lập
         const logs = await AttendanceLog.aggregate([
+            { $match: filter }, // Áp dụng bộ lọc thời gian
             { $sort: { timestamp: -1 } },
             { $lookup: { from: 'students', localField: 'uid', foreignField: 'uid', as: 'studentInfo' } }
         ]);
 
         const allShifts = await Shift.find({});
 
-        // 2. Tạo Workbook và Worksheet mới
+        // 4. Tạo Workbook và Worksheet mới
         const workbook = new exceljs.Workbook();
         workbook.creator = 'NTTU Smart Attendance System';
         workbook.created = new Date();
         const worksheet = workbook.addWorksheet('Báo cáo điểm danh');
 
-        // 3. Định nghĩa cột và style cho header
+        // 5. Định nghĩa cột và style cho header
         worksheet.columns = [
             { header: 'STT', key: 'stt', width: 5, style: { alignment: { horizontal: 'center' } } },
             { header: 'Mã UID', key: 'uid', width: 25 },
@@ -468,7 +487,7 @@ app.get('/api/report/excel', async (req, res) => {
             cell.border = { bottom: { style: 'thin', color: { argb: 'FF6366F1' } } };
         });
 
-        // 4. Thêm dữ liệu vào các dòng
+        // 6. Thêm dữ liệu đã lọc vào các dòng
         logs.forEach((log, index) => {
             const studentExists = log.studentInfo && log.studentInfo.length > 0;
             const fullName = studentExists ? log.studentInfo[0].fullName : 'Thẻ lạ';
@@ -496,7 +515,7 @@ app.get('/api/report/excel', async (req, res) => {
             });
         });
 
-        // 5. Thiết lập header và gửi file về client
+        // 7. Thiết lập header và gửi file về client
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', 'attachment; filename="BaoCaoDiemDanh_' + new Date().toISOString().slice(0,10) + '.xlsx"');
 
@@ -504,7 +523,7 @@ app.get('/api/report/excel', async (req, res) => {
         res.end();
         console.log(`✅ Đã xuất báo cáo Excel thành công.`);
     } catch (error) {
-        console.error("❌ Lỗi khi xuất file Excel:", error);
+        console.error("❌ LỖI API EXCEL:", error);
         res.status(500).send("Không thể tạo file báo cáo.");
     }
 });
