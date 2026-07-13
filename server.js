@@ -153,18 +153,18 @@ app.post('/api/attendance', async (req, res) => {
 });
 
 // API lấy lịch sử cho Dashboard
-// API lấy lịch sử cho Dashboard (Đã nâng cấp: Hỗ trợ lọc theo ngày)
+// API lấy lịch sử cho Dashboard (Đã nâng cấp: Hỗ trợ lọc theo khoảng ngày)
 app.get('/api/logs', async (req, res) => {
     try {
-        const dateQuery = req.query.date; // Nhận tham số ngày từ Frontend (VD: '2026-07-12')
+        const { startDate, endDate } = req.query; // Nhận tham số startDate và endDate từ Frontend (VD: '2023-10-27')
         
         // Logic tạo bộ lọc theo ngày (ĐÃ CHUẨN HÓA MÚI GIỜ VIỆT NAM)
         let filter = {};
-        if (dateQuery) {
-            // Định nghĩa mốc thời gian bắt đầu và kết thúc của ngày đó THEO GIỜ VIỆT NAM (UTC+7)
+        if (startDate && endDate) {
+            // Định nghĩa mốc thời gian bắt đầu và kết thúc của khoảng ngày đó THEO GIỜ VIỆT NAM (UTC+7)
             // Ép Node.js hiểu rằng chuỗi '00:00:00' này là của múi giờ +07:00
-            const startOfDayVN = new Date(`${dateQuery}T00:00:00+07:00`);
-            const endOfDayVN = new Date(`${dateQuery}T23:59:59+07:00`);
+            const startOfDayVN = new Date(`${startDate}T00:00:00+07:00`);
+            const endOfDayVN = new Date(`${endDate}T23:59:59+07:00`);
 
             // Yêu cầu MongoDB lọc dữ liệu nằm giữa 2 mốc thời gian này
             filter = { timestamp: { $gte: startOfDayVN, $lte: endOfDayVN } };
