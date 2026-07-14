@@ -17,10 +17,16 @@ app.use((req, res, next) => {
 
 // Cấu hình "Người giao thư"
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // Sử dụng SSL/TLS
     auth: {
-        user: process.env.EMAIL_USER, // Sẽ giấu kín trên Render
-        pass: process.env.EMAIL_PASS  // Sẽ giấu kín trên Render
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    },
+    // Thêm cấu hình này để tránh bị tường lửa của Render chặn kết nối
+    tls: {
+        rejectUnauthorized: false
     }
 });
 
