@@ -174,7 +174,8 @@ app.post('/api/attendance', async (req, res) => {
                 currentStatus = "Ngoài giờ";
             }
         } else {
-            // GỌI HÀM BẮN EMAIL Ở ĐÂY:
+            // GỌI HÀM BẮN EMAIL KHI PHÁT HIỆN THẺ LẠ:
+            console.log("===> Đang kích hoạt hàm gửi Email cảnh báo...");
             const timeString = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
             sendAlertEmail(uid, timeString); // Không dùng await để không làm chậm máy chấm công
         }
