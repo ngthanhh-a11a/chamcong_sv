@@ -10,6 +10,10 @@
 // SỬA LỖI: Thêm chính xác phân hệ API endpoint ở cuối đường dẫn
 const char* serverName = "https://chamcong-sv-nttu.onrender.com/api/attendance";
 
+// Khai báo biến và URL cho cơ chế Ping điều khiển từ xa
+const char* pingUrl = "https://chamcong-sv-nttu.onrender.com/api/device/ping";
+unsigned long lastPingTime = 0;
+
 // Định nghĩa chân kết nối (Giữ nguyên cấu hình phần cứng cũ)
 #define SS_PIN 5
 #define RST_PIN 4
@@ -55,64 +59,94 @@ void setup() {
 }
 
 void loop() {
-  // Đọc thẻ RFID
-  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial())
-    return;
-
-  String uidStr = "";
-  for (byte i = 0; i < rfid.uid.size; i++) {
-    uidStr += String(rfid.uid.uidByte[i] < 0x10 ? "0" : "");
-    uidStr += String(rfid.uid.uidByte[i], HEX);
-  }
-  uidStr.toUpperCase();
-  
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("UID: " + uidStr);
-  lcd.setCursor(0, 1);
-  lcd.print("Dang gui API...");
-  Serial.println("\nQuét được thẻ UID: " + uidStr);
-
-  // Gửi HTTP POST lên Server Render Cloud
-  if (WiFi.status() == WL_CONNECTED) {
-    // SỬA LỖI: Tạo client bảo mật và cấu hình bỏ qua kiểm tra chứng chỉ SSL của Render
-    WiFiClientSecure client;
-    client.setInsecure(); 
-
-    HTTPClient http;
-    http.begin(client, serverName); // Khởi tạo kết nối bảo mật HTTPS
+  // --- PHẦN 1: ĐỌC THẺ RFID (LOGIC GỐC ĐƯỢC GIỮ NGUYÊN) ---
+  // Chỉ thực thi khi có thẻ mới và đọc được UID thành công
+  if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+    String uidStr = "";
+    for (byte i = 0; i < rfid.uid.size; i++) {
+      uidStr += String(rfid.uid.uidByte[i] < 0x10 ? "0" : "");
+      uidStr += String(rfid.uid.uidByte[i], HEX);
+    }
+    uidStr.toUpperCase();
     
-    // Khai báo Header là JSON
-    http.addHeader("Content-Type", "application/json");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("UID: " + uidStr);
+    lcd.setCursor(0, 1);
+    lcd.print("Dang gui API...");
+    Serial.println("\nQuét được thẻ UID: " + uidStr);
 
-    // Tạo chuỗi JSON thủ công cực nhẹ: {"uid":"E3F2A1B2"}
-    String httpRequestData = "{\"uid\":\"" + uidStr + "\"}";
-    
-    // Gửi request POST
-    int httpResponseCode = http.POST(httpRequestData);
-    
-    // SQA Logic: Chấp nhận mã 200 (OK) hoặc 201 (Created) từ Node.js Backend
-    if (httpResponseCode == 200 || httpResponseCode == 201) {
-      Serial.print("Đẩy dữ liệu thành công. HTTP Code: ");
-      Serial.println(httpResponseCode);
-      successFeedback();
+    // Gửi HTTP POST lên Server Render Cloud
+    if (WiFi.status() == WL_CONNECTED) {
+      // SỬA LỖI: Tạo client bảo mật và cấu hình bỏ qua kiểm tra chứng chỉ SSL của Render
+      WiFiClientSecure client;
+      client.setInsecure(); 
+
+      HTTPClient http;
+      http.begin(client, serverName); // Khởi tạo kết nối bảo mật HTTPS
+      
+      // Khai báo Header là JSON
+      http.addHeader("Content-Type", "application/json");
+
+      // Tạo chuỗi JSON thủ công cực nhẹ: {"uid":"E3F2A1B2"}
+      String httpRequestData = "{\"uid\":\"" + uidStr + "\"}";
+      
+      // Gửi request POST
+      int httpResponseCode = http.POST(httpRequestData);
+      
+      // SQA Logic: Chấp nhận mã 200 (OK) hoặc 201 (Created) từ Node.js Backend
+      if (httpResponseCode == 200 || httpResponseCode == 201) {
+        Serial.print("Đẩy dữ liệu thành công. HTTP Code: ");
+        Serial.println(httpResponseCode);
+        successFeedback();
+      } else {
+        Serial.print("Lỗi từ Server. HTTP Code: ");
+        Serial.println(httpResponseCode);
+        errorFeedback();
+      }
+      
+      http.end(); // Giải phóng tài nguyên mạng
     } else {
-      Serial.print("Lỗi từ Server. HTTP Code: ");
-      Serial.println(httpResponseCode);
+      Serial.println("Lỗi mất kết nối WiFi");
       errorFeedback();
     }
     
-    http.end(); // Giải phóng tài nguyên mạng
-  } else {
-    Serial.println("Lỗi mất kết nối WiFi");
-    errorFeedback();
+    rfid.PICC_HaltA();
+    rfid.PCD_StopCrypto1();
+    
+    delay(2000); 
+    displayReady(); 
   }
-  
-  rfid.PICC_HaltA();
-  rfid.PCD_StopCrypto1();
-  
-  delay(2000); 
-  displayReady(); 
+
+  // --- PHẦN 2: CƠ CHẾ NHỊP TIM (PING) ĐIỀU KHIỂN TỪ XA ---
+  // Chạy mỗi 3 giây (3000ms) một cách không đồng bộ, không làm đứng máy
+  if (millis() - lastPingTime > 3000) {
+      if (WiFi.status() == WL_CONNECTED) {
+          WiFiClientSecure client;
+          client.setInsecure(); // Bỏ qua kiểm tra SSL cho Render
+          HTTPClient http;
+          
+          http.begin(client, pingUrl); // Dùng client bảo mật cho URL https
+          int httpCode = http.GET();
+
+          if (httpCode > 0) {
+              String payload = http.getString();
+              payload.trim(); // Xóa khoảng trắng thừa cho chắc cú
+
+              // Nếu server ra lệnh RESET, khởi động lại mạch
+              if (payload == "RESET") {
+                  Serial.println(">>> NHAN LENH RESET TU WEB. DANG KHOI DONG LAI! <<<");
+                  lcd.clear();
+                  lcd.print("Dang reset...");
+                  delay(1000); // Đợi 1 giây cho an toàn
+                  ESP.restart(); // Lệnh tự khởi động lại
+              }
+          }
+          http.end();
+      }
+      // Cập nhật lại thời gian vừa ping để 3 giây sau ping tiếp
+      lastPingTime = millis(); 
+  }
 }
 
 void displayReady() {

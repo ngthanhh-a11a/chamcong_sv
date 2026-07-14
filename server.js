@@ -598,6 +598,44 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// ==========================================
+// API: ĐIỀU KHIỂN MÁY CHẤM CÔNG TỪ XA
+// ==========================================
+
+// Biến toàn cục (RAM) để lưu trạng thái máy
+let lastDevicePing = 0;      // Thời điểm cuối cùng máy còn sống
+let pendingCommand = "IDLE"; // Lệnh chờ gửi xuống máy
+
+// 1. API dành cho Mạch C++ gọi lên mỗi 3 giây (Dùng Plain Text cho mạch dễ đọc)
+app.get('/api/device/ping', (req, res) => {
+    lastDevicePing = Date.now(); // Cập nhật nhịp tim mới nhất
+    
+    res.send(pendingCommand); // Gửi thẳng chữ "IDLE" hoặc "RESET"
+    
+    // Nếu vừa phát lệnh RESET xong, lập tức gài số lùi về IDLE để tránh reset vòng lặp
+    if (pendingCommand === "RESET") {
+        pendingCommand = "IDLE"; 
+    }
+});
+
+// 2. API dành cho Web kiểm tra xem máy đang bật hay tắt
+app.get('/api/device/status', (req, res) => {
+    // Nếu quá 10 giây (10000ms) không thấy nhịp tim -> Máy đã tắt/rút điện
+    const isOnline = (Date.now() - lastDevicePing) < 10000; 
+    res.json({ isOnline });
+});
+
+// 3. API dành cho Web phát lệnh Reset
+app.post('/api/device/reset', (req, res) => {
+    const isOnline = (Date.now() - lastDevicePing) < 10000; 
+    if (!isOnline) {
+        // Chặn ngay lập tức nếu máy đang tắt
+        return res.status(400).json({ error: "Máy đang tắt, vui lòng mở!" });
+    }
+    pendingCommand = "RESET"; // Nạp đạn!
+    res.json({ message: "Đã gửi lệnh Reset! Máy sẽ khởi động lại trong vài giây." });
+});
+
 // 5. KHỞI CHẠY SERVER
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
