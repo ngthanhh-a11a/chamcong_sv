@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const exceljs = require('exceljs');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const app = express();
@@ -13,6 +14,41 @@ app.use((req, res, next) => {
     console.log(`[API Nhận tín hiệu] -> ${req.method} ${req.url}`);
     next();
 });
+
+// Cấu hình "Người giao thư"
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER, // Sẽ giấu kín trên Render
+        pass: process.env.EMAIL_PASS  // Sẽ giấu kín trên Render
+    }
+});
+
+// Hàm tự động bắn Email
+const sendAlertEmail = async (uid, timeString) => {
+    try {
+        const mailOptions = {
+            from: '"NTTU Security System" <no-reply@nttu.edu.vn>',
+            to: process.env.EMAIL_USER, // Gửi báo động về chính máy bạn
+            subject: '🚨 [CẢNH BÁO] Phát hiện thẻ lạ xâm nhập!',
+            html: `
+                <div style="font-family: Arial, sans-serif; border: 2px solid red; padding: 20px; border-radius: 10px; max-width: 500px;">
+                    <h2 style="color: red; text-align: center;">⚠️ BÁO ĐỘNG AN NINH</h2>
+                    <p>Hệ thống vừa ghi nhận một nỗ lực truy cập trái phép bằng thẻ chưa đăng ký trong Cơ sở dữ liệu.</p>
+                    <div style="background-color: #fff3f3; padding: 15px; border-radius: 8px;">
+                        <p><strong>Mã thẻ (UID):</strong> <span style="color: #d97706; font-size: 18px; font-weight: bold;">${uid}</span></p>
+                        <p><strong>Thời gian:</strong> ${timeString}</p>
+                    </div>
+                    <p style="color: #666; font-size: 12px; margin-top: 20px;">* Hệ thống cảnh báo tự động. Vui lòng kiểm tra camera giám sát ngay lập tức!</p>
+                </div>
+            `
+        };
+        await transporter.sendMail(mailOptions);
+        console.log("===> [EMAIL] Bắn email cảnh báo thành công!");
+    } catch (error) {
+        console.error("===> [EMAIL] Lỗi gửi mail:", error);
+    }
+};
 
 // 2. Kết nối MongoDB
 mongoose.connect(process.env.MONGO_URI)
@@ -131,6 +167,10 @@ app.post('/api/attendance', async (req, res) => {
             } else {
                 currentStatus = "Ngoài giờ";
             }
+        } else {
+            // GỌI HÀM BẮN EMAIL Ở ĐÂY:
+            const timeString = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+            sendAlertEmail(uid, timeString); // Không dùng await để không làm chậm máy chấm công
         }
         // Nếu thẻ chưa đăng ký, trạng thái mặc định là "Chưa đăng ký"
 
