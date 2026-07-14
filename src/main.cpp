@@ -14,6 +14,11 @@ const char* serverName = "https://chamcong-sv-nttu.onrender.com/api/attendance";
 const char* pingUrl = "https://chamcong-sv-nttu.onrender.com/api/device/ping";
 unsigned long lastPingTime = 0;
 
+// Biến điều khiển màn hình không bị khóa (non-blocking)
+unsigned long feedbackDisplayStartTime = 0;
+bool isDisplayingFeedback = false;
+const unsigned long FEEDBACK_DURATION = 2000; // Hiển thị trong 2 giây
+
 // Định nghĩa chân kết nối (Giữ nguyên cấu hình phần cứng cũ)
 #define SS_PIN 5
 #define RST_PIN 4
@@ -59,9 +64,18 @@ void setup() {
 }
 
 void loop() {
-  // --- PHẦN 1: ĐỌC THẺ RFID (LOGIC GỐC ĐƯỢC GIỮ NGUYÊN) ---
-  // Chỉ thực thi khi có thẻ mới và đọc được UID thành công
-  if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+  // --- PHẦN 0: QUẢN LÝ TRẠNG THÁI GIAO DIỆN VÀ PHẢN HỒI (KHÔNG KHÓA) ---
+  if (isDisplayingFeedback) {
+    // Tự động reset màn hình về trạng thái chờ sau 2 giây
+    if (millis() - feedbackDisplayStartTime > FEEDBACK_DURATION) {
+      isDisplayingFeedback = false;
+      displayReady();
+    }
+  }
+
+  // --- PHẦN 1: ĐỌC THẺ RFID ---
+  // Chỉ quét thẻ mới khi màn hình đang ở trạng thái chờ (không hiển thị phản hồi)
+  if (!isDisplayingFeedback && rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
     String uidStr = "";
     for (byte i = 0; i < rfid.uid.size; i++) {
       uidStr += String(rfid.uid.uidByte[i] < 0x10 ? "0" : "");
@@ -114,38 +128,49 @@ void loop() {
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
     
-    delay(2000); 
-    displayReady(); 
+    // Đặt hẹn giờ để quay lại màn hình chờ sau 2 giây mà không khóa vòng lặp
+    isDisplayingFeedback = true;
+    feedbackDisplayStartTime = millis();
   }
 
-  // --- PHẦN 2: CƠ CHẾ NHỊP TIM (PING) ĐIỀU KHIỂN TỪ XA ---
-  // Chạy mỗi 3 giây (3000ms) một cách không đồng bộ, không làm đứng máy
-  if (millis() - lastPingTime > 3000) {
+  // --- PHẦN 2: CƠ CHẾ NHỊP TIM: Tối ưu hóa - Chống nghẽn quét thẻ ---
+  if (millis() - lastPingTime > 10000) { // TĂNG LÊN 10 GIÂY (Tránh spam mạng)
       if (WiFi.status() == WL_CONNECTED) {
           WiFiClientSecure client;
           client.setInsecure(); // Bỏ qua kiểm tra SSL cho Render
           HTTPClient http;
           
           http.begin(client, pingUrl); // Dùng client bảo mật cho URL https
-          int httpCode = http.GET();
+          
+          // QUAN TRỌNG NHẤT: Chỉ đợi Server trả lời tối đa 1 giây. 
+          // Quá 1 giây không thấy gì là cúp máy luôn để quay lại quét thẻ!
+          http.setTimeout(1000); 
+          
+          int httpCode = http.GET(); // Bắt đầu gọi Sếp
 
           if (httpCode > 0) {
               String payload = http.getString();
-              payload.trim(); // Xóa khoảng trắng thừa cho chắc cú
+              payload.trim(); 
 
-              // Nếu server ra lệnh RESET, khởi động lại mạch
               if (payload == "RESET") {
-                  Serial.println(">>> NHAN LENH RESET TU WEB. DANG KHOI DONG LAI! <<<");
+                  Serial.println(">>> NHAN LENH RESET TU WEB <<<");
                   lcd.clear();
                   lcd.print("Dang reset...");
-                  delay(1000); // Đợi 1 giây cho an toàn
-                  ESP.restart(); // Lệnh tự khởi động lại
+                  
+                  // THÊM DÒNG NÀY: Tắt WiFi cẩn thận trước khi reset để không bị đơ mạch
+                  WiFi.disconnect(true); 
+                  delay(500); 
+                  ESP.restart(); 
               }
+          } else {
+              Serial.println("Ping Server that bai, bo qua de quet the...");
           }
+          
+          // LUÔN LUÔN KẾT THÚC KẾT NỐI ĐỂ TRÁNH TRÀN RAM (Nguyên nhân gây chết ở lần quét 3)
           http.end();
       }
-      // Cập nhật lại thời gian vừa ping để 3 giây sau ping tiếp
-      lastPingTime = millis(); 
+      
+      lastPingTime = millis(); // Đặt lại đồng hồ
   }
 }
 
@@ -155,32 +180,27 @@ void displayReady() {
   lcd.print("He thong D.Danh");
   lcd.setCursor(0, 1);
   lcd.print("Moi quet the...");
+  // Tắt tất cả các đèn báo hiệu khi quay về màn hình chờ
+  digitalWrite(LED_GREEN, LOW);
+  digitalWrite(LED_RED, LOW);
 }
 
 void successFeedback() {
   lcd.setCursor(0, 1);
   lcd.print("Thanh cong!     ");
   
-  // Bật LED xanh và phát âm thanh tần số 1000Hz
-  digitalWrite(LED_GREEN, HIGH);
-  tone(BUZZER, 1000); 
-  
-  delay(500); // Kéo dài thời gian sáng đèn để dễ quan sát
-  
-  // Tắt LED và ngắt âm thanh
-  noTone(BUZZER);
-  digitalWrite(LED_GREEN, LOW);
+  // Bật LED xanh và còi
+  digitalWrite(LED_GREEN, HIGH); // Bật đèn
+  // Dùng tone() với tham số duration để còi tự tắt, không làm khóa chương trình
+  tone(BUZZER, 1200, 200); // Phát âm thanh "bíp" ở tần số 1200Hz trong 200ms
 }
 
 void errorFeedback() {
   lcd.setCursor(0, 1);
   lcd.print("Loi ket noi!    ");
   
-  // Bật LED đỏ và còi kêu dài cảnh báo
-  digitalWrite(LED_RED, HIGH);
-  digitalWrite(BUZZER, HIGH); 
-  delay(1000); 
-  
-  digitalWrite(BUZZER, LOW);
-  digitalWrite(LED_RED, LOW);
+  // Bật LED đỏ và còi
+  digitalWrite(LED_RED, HIGH); // Bật đèn
+  // Dùng tone() với tham số duration để còi tự tắt, không làm khóa chương trình
+  tone(BUZZER, 400, 1000); // Phát âm thanh lỗi ở tần số 400Hz trong 1 giây
 }
