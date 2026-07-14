@@ -588,6 +588,28 @@ app.get('/api/logs/student/:uid', async (req, res) => {
 });
 
 // ==========================================
+// API: KIỂM TRA BÁO ĐỘNG ĐỎ (POLLING)
+// ==========================================
+app.get('/api/alert/check', async (req, res) => {
+    try {
+        // Lấy mốc thời gian cách đây 3 giây
+        const threeSecondsAgo = new Date(Date.now() - 3000);
+
+        // Tìm xem có log nào trạng thái "Chưa đăng ký" trong 3 giây qua không
+        const alert = await AttendanceLog.findOne({
+            status: 'Chưa đăng ký', 
+            timestamp: { $gte: threeSecondsAgo }
+        });
+
+        // Nếu tìm thấy -> Trả về true để Frontend hú còi
+        res.json({ isAlert: !!alert });
+    } catch (error) {
+        console.error("Lỗi khi kiểm tra báo động thẻ lạ:", error);
+        res.json({ isAlert: false });
+    }
+});
+
+// ==========================================
 // API GIÁM SÁT HỆ THỐNG (SYSTEM HEALTH)
 // ==========================================
 app.get('/api/health', (req, res) => {
