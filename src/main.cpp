@@ -123,6 +123,7 @@ void loop() {
       }
       
       http.end(); // Giải phóng tài nguyên mạng
+      client.stop(); // CHÌA KHÓA GIẢI QUYẾT LỖI: Trả lại RAM cho ESP32
     } else {
       Serial.println("Lỗi mất kết nối WiFi");
       errorFeedback();
@@ -171,6 +172,7 @@ void loop() {
           
           // LUÔN LUÔN KẾT THÚC KẾT NỐI ĐỂ TRÁNH TRÀN RAM (Nguyên nhân gây chết ở lần quét 3)
           http.end();
+          client.stop(); // Dọn dẹp RAM
       }
       
       lastPingTime = millis(); // Đặt lại đồng hồ
