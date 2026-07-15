@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const exceljs = require('exceljs');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 require('dotenv').config();
 
 const app = express();
@@ -15,46 +15,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// Cấu hình "Người giao thư"
-const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true, // Sử dụng SSL/TLS
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    },
-    // Thêm cấu hình này để tránh bị tường lửa của Render chặn kết nối
-    tls: {
-        rejectUnauthorized: false
-    }
-});
-
-// Hàm tự động bắn Email
-const sendAlertEmail = async (uid, timeString) => {
-    try {
-        const mailOptions = {
-            from: '"NTTU Security System" <no-reply@nttu.edu.vn>',
-            to: process.env.EMAIL_USER, // Gửi báo động về chính máy bạn
-            subject: '🚨 [CẢNH BÁO] Phát hiện thẻ lạ xâm nhập!',
-            html: `
-                <div style="font-family: Arial, sans-serif; border: 2px solid red; padding: 20px; border-radius: 10px; max-width: 500px;">
-                    <h2 style="color: red; text-align: center;">⚠️ BÁO ĐỘNG AN NINH</h2>
-                    <p>Hệ thống vừa ghi nhận một nỗ lực truy cập trái phép bằng thẻ chưa đăng ký trong Cơ sở dữ liệu.</p>
-                    <div style="background-color: #fff3f3; padding: 15px; border-radius: 8px;">
-                        <p><strong>Mã thẻ (UID):</strong> <span style="color: #d97706; font-size: 18px; font-weight: bold;">${uid}</span></p>
-                        <p><strong>Thời gian:</strong> ${timeString}</p>
-                    </div>
-                    <p style="color: #666; font-size: 12px; margin-top: 20px;">* Hệ thống cảnh báo tự động. Vui lòng kiểm tra camera giám sát ngay lập tức!</p>
-                </div>
-            `
-        };
-        await transporter.sendMail(mailOptions);
-        console.log("===> [EMAIL] Bắn email cảnh báo thành công!");
-    } catch (error) {
-        console.error("===> [EMAIL] Lỗi gửi mail:", error);
-    }
-};
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // 2. Kết nối MongoDB
 mongoose.connect(process.env.MONGO_URI)
@@ -174,10 +135,24 @@ app.post('/api/attendance', async (req, res) => {
                 currentStatus = "Ngoài giờ";
             }
         } else {
-            // GỌI HÀM BẮN EMAIL KHI PHÁT HIỆN THẺ LẠ:
-            console.log("===> Đang kích hoạt hàm gửi Email cảnh báo...");
-            const timeString = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
-            sendAlertEmail(uid, timeString); // Không dùng await để không làm chậm máy chấm công
+            // ===> Đang kích hoạt hàm gửi Email cảnh báo...
+            // Sử dụng IIFE (Immediately Invoked Function Expression) để gửi mail bất đồng bộ,
+            // không làm chậm phản hồi về cho máy chấm công.
+            (async () => {
+                try {
+                    const data = await resend.emails.send({
+                      from: 'onboarding@resend.dev', // Tuyệt đối giữ nguyên dòng này
+                      to: process.env.EMAIL_USER, // Gửi về email đã cấu hình trong .env
+                      subject: 'CẢNH BÁO BẢO MẬT: Phát hiện thẻ lạ!',
+                      html: `<p>Hệ thống chấm công vừa ghi nhận một thẻ chưa đăng ký.</p>
+                             <p><strong>Mã thẻ UID:</strong> ${uid}</p>
+                             <p><strong>Thời gian:</strong> ${new Date().toLocaleString('vi-VN')}</p>`
+                    });
+                    console.log('===> [EMAIL] Bắn email cảnh báo thành công!', data.id);
+                  } catch (error) {
+                    console.error('===> [EMAIL] Lỗi gửi mail:', error);
+                  }
+            })();
         }
         // Nếu thẻ chưa đăng ký, trạng thái mặc định là "Chưa đăng ký"
 
