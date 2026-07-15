@@ -50,8 +50,8 @@ void setup() {
 
   SPI.begin();
   rfid.PCD_Init();
-
   // Kết nối WiFi Wokwi
+  // Dành riêng cho chạy giả lập Wokwi
   WiFi.begin("Wokwi-GUEST", "", 6);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -101,6 +101,9 @@ void loop() {
       
       // Khai báo Header là JSON
       http.addHeader("Content-Type", "application/json");
+
+      // Đặt timeout để tránh bị treo khi server phản hồi chậm
+      http.setTimeout(3000);
 
       // Tạo chuỗi JSON thủ công cực nhẹ: {"uid":"E3F2A1B2"}
       String httpRequestData = "{\"uid\":\"" + uidStr + "\"}";
